@@ -1,0 +1,1 @@
+[ -f "./{{GAME_BINARY}}" ] || { echo "ERROR: The game files are missing, the installation did not finish. Restart the server to retry the download, or reinstall it."; exit 1; } ;

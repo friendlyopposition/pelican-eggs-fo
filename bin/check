@@ -1,0 +1,54 @@
+#!/bin/bash
+# Runs every check on this repo's eggs and scripts. Exits non-zero if any fails.
+set -euo pipefail
+
+usage() {
+    cat <<'EOF'
+Usage: bin/check [--help]
+
+Checks the eggs and the shared scripts:
+  - bash syntax, and shellcheck when it is installed (CI always runs it)
+  - every egg: valid YAML, PLCN_v3, update_url pointing at its own file, no secret defaults,
+    SteamCMD eggs carrying the master install script, GAME_BINARY and the startup check
+  - the install script's SteamCMD retry and install check, against a fake SteamCMD
+  - the startup check, run the way the steamcmd image's entrypoint runs it
+Needs bash and python3 with PyYAML.
+EOF
+}
+
+case "${1:-}" in
+    -h | --help) usage; exit 0 ;;
+    "") ;;
+    *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
+esac
+
+repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${repo_dir}"
+status=0
+
+run() {
+    echo "== $1"
+    shift
+    "$@" || status=1
+}
+
+# shellcheck disable=SC2317 # called through run
+bash_syntax() {
+    local f
+    for f; do bash -n "$f" || return 1; done
+    echo "ok   $# files"
+}
+
+shell_files=(bin/check scripts/steamcmd-install.sh tests/*.sh)
+run "bash syntax" bash_syntax "${shell_files[@]}"
+if command -v shellcheck > /dev/null; then
+    run "shellcheck" shellcheck "${shell_files[@]}"
+else
+    echo "== shellcheck: not installed, skipped (CI runs it)"
+fi
+run "eggs" python3 tests/check_eggs.py
+run "install script: SteamCMD retries" bash tests/install-retry.sh
+run "startup check" bash tests/startup-check.sh
+
+if (( status == 0 )); then echo "All checks passed."; else echo "Some checks failed." >&2; fi
+exit "${status}"
